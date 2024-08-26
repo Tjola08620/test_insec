@@ -1,35 +1,37 @@
 pipeline {
     agent any
+    tools {
+        maven 'maven-3.9'
+        jdk 'openjdk-17'
+    }
+    environment {
+        REPO_NAME = "${env.GIT_URL.tokenize('/.')[-2]}"
+    }
     stages {
-        stage("synopsys-security-scan") {
-            when {
-                // Triggering Synopsys Security Scan on master branch or Pull Request
-                anyOf {
-                    branch 'main'
-                    branch pattern: "PR-\\d+", comparator: "REGEXP"
-                }
-            }
+        stage('Build') {
             steps {
-                script {
-                    def status = synopsys_scan product: 'coverity'
-                        // Uncomment if below parameters are not set in global configuration                  
-                        // coverity_url:'COVERITY_URL',                           
-                        // coverity_user: 'COVERITY_USER',
-                        // coverity_passphrase: 'COVERITY_PASSPHRASE',
-                        // bitbucket_token: 'BITBUCKET_TOKEN', // Used for PR comment. Use github_token for GitHub or gitlab_token for GitLab
-                        // bitbucket_username:'BITBUCKET_USERNAME' // Used for bitbucket cloud pr comment if app password is set as bitbucket_token 
-        
-                        // Pull Request Comments
-                        //  coverity_prComment_enabled: true
-                          
-                        // Mark build status if issues found
-                        //  mark_build_status: 'UNSTABLE'
-                
-                    // Uncomment to add custom logic based on return status
-                    // if (status == 8) { unstable 'policy violation' }
-                    // else if (status != 0) { error 'plugin failure' }
-                }
+                sh 'mvn -B package'
+            }
+        }
+        stage('Coverity Full Scan') {
+            when { not { changeRequest() } }
+            steps {
+                synopsys_scan product: 'coverity', coverity_project_name: "${env.REPO_NAME}", coverity_stream_name: "${env.REPO_NAME}-$BRANCH_NAME",
+                    coverity_policy_view: 'Outstanding Issues'
+            }
+        }
+        stage('Coverity PR Scan') {
+            when { changeRequest() }
+            steps {
+                synopsys_scan product: 'coverity', coverity_project_name: "${env.REPO_NAME}", coverity_stream_name: "${env.REPO_NAME}-$CHANGE_TARGET",
+                    coverity_automation_prcomment: true
             }
         }
     }
-}  
+    post {
+        always {
+            //zip archive: true, dir: '.bridge', zipFile: 'bridge-logs.zip'
+            cleanWs()
+        }
+    }
+}
