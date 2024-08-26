@@ -1,41 +1,35 @@
 pipeline {
     agent any
-    
     stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
+        stage("synopsys-security-scan") {
+            when {
+                // Triggering Synopsys Security Scan on master branch or Pull Request
+                anyOf {
+                    branch 'main'
+                    branch pattern: "PR-\\d+", comparator: "REGEXP"
+                }
             }
-        }
-        stage('Black Duck Scan') {
             steps {
                 script {
-                    // Perform the Synopsys Black Duck scan
-                    def scanResults = synopsysSecurityScan(
-                        scanType: 'BLACKDUCK',
-                        blackDuckInstallation: 'BD-PARTNER',
-                        failBuildForPolicyViolations: false,
-                        publishResults: true
-                    )
-                    
-                    // Get scan status and violations
-                    def scanStatus = scanResults.getScanStatus()
-                    def violations = scanResults.getPolicyViolations()
-                    
-                    // Format a comment with the scan results
-                    def comment = "Black Duck Scan Results: Status - ${scanStatus}\n"
-                    comment += "Policy Violations:\n"
-                    violations.each { violation ->
-                        comment += "- ${violation.policyName}: ${violation.description}\n"
-                    }
-                    
-                    // Post the comment to the GitHub PR
-                    githubPrComment(
-                        context: "Black Duck Security Scan",
-                        message: comment
-                    )
+                    def status = synopsys_scan product: 'coverity'
+                        // Uncomment if below parameters are not set in global configuration                  
+                        // coverity_url:'COVERITY_URL',                           
+                        // coverity_user: 'COVERITY_USER',
+                        // coverity_passphrase: 'COVERITY_PASSPHRASE',
+                        // bitbucket_token: 'BITBUCKET_TOKEN', // Used for PR comment. Use github_token for GitHub or gitlab_token for GitLab
+                        // bitbucket_username:'BITBUCKET_USERNAME' // Used for bitbucket cloud pr comment if app password is set as bitbucket_token 
+        
+                        // Pull Request Comments
+                        //  coverity_prComment_enabled: true
+                          
+                        // Mark build status if issues found
+                        //  mark_build_status: 'UNSTABLE'
+                
+                    // Uncomment to add custom logic based on return status
+                    // if (status == 8) { unstable 'policy violation' }
+                    // else if (status != 0) { error 'plugin failure' }
                 }
             }
         }
     }
-}
+}  
